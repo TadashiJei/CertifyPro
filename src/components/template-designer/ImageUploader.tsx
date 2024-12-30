@@ -13,25 +13,6 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
-  const ensureBucketExists = async () => {
-    try {
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const certificatesBucket = buckets?.find(b => b.name === 'certificates');
-      
-      if (!certificatesBucket) {
-        const { error } = await supabase.storage.createBucket('certificates', {
-          public: true,
-          fileSizeLimit: 1024 * 1024 * 2, // 2MB
-        });
-        
-        if (error) throw error;
-      }
-    } catch (error: any) {
-      console.error('Error ensuring bucket exists:', error);
-      // Continue anyway as the bucket might exist but we might not have permission to list buckets
-    }
-  };
-
   const uploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -52,17 +33,15 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }
         throw new Error('Image size should be less than 2MB.');
       }
 
-      // Ensure bucket exists
-      await ensureBucketExists();
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      // Generate a unique filename
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `template-images/${fileName}`;
 
-      const { error: uploadError, data } = await supabase.storage
+      let { error: uploadError, data } = await supabase.storage
         .from('certificates')
         .upload(filePath, file, {
-          upsert: false,
+          upsert: true,
           contentType: file.type,
         });
 
@@ -70,13 +49,13 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }
         throw uploadError;
       }
 
-      if (!data) {
-        throw new Error('Upload failed - no data returned');
-      }
-
       const { data: { publicUrl } } = supabase.storage
         .from('certificates')
         .getPublicUrl(filePath);
+
+      if (!publicUrl) {
+        throw new Error('Failed to get public URL for uploaded image');
+      }
 
       onUploadComplete(publicUrl);
 
@@ -104,11 +83,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }
           accept="image/*"
           onChange={uploadImage}
           disabled={uploading}
-          className="cursor-pointer"
         />
-        <p className="text-sm text-gray-500">
-          Supported formats: JPG, PNG, GIF (max 2MB)
-        </p>
       </div>
       {uploading && (
         <div className="flex items-center gap-2">

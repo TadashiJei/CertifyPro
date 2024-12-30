@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ChevronLeft, Settings, Save, Loader2, LayoutGrid, LayoutTemplate } from 'lucide-react';
 import { ResizableElement } from './template-designer/ResizableElement';
@@ -208,40 +208,32 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     }
   };
 
-  const handleImageUpload = async (file: File) => {
+  const handleImageUploadComplete = (url: string) => {
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${uuidv4()}.${fileExt}`;
-      const filePath = `${user?.id}/${fileName}`;
+      if (!selectedElement || selectedElement.type !== 'image') return;
 
-      const { error: uploadError, data } = await supabase.storage
-        .from('template-images')
-        .upload(filePath, file);
+      setElements((prev) =>
+        prev.map((el) =>
+          el.id === selectedElement.id
+            ? {
+                ...el,
+                content: url,
+              }
+            : el
+        )
+      );
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('template-images')
-        .getPublicUrl(filePath);
-
-      const newElement: TemplateElement = {
-        id: uuidv4(),
-        type: 'image',
-        content: publicUrl,
-        position: { x: 100, y: 100 },
-        size: { width: 200, height: 200 },
-        style: { ...DEFAULT_STYLES.image },
-        zIndex: elements.length,
-      };
-
-      setElements(prev => [...prev, newElement]);
-      setSelectedElement(newElement);
       setShowImageUploader(false);
+      
+      toast({
+        title: 'Success',
+        description: 'Image added successfully',
+      });
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Error setting image URL:', error);
       toast({
         title: 'Error',
-        description: 'Failed to upload image. Please try again.',
+        description: 'Failed to add image to template',
         variant: 'destructive',
       });
     }
@@ -727,14 +719,19 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
         )}
       </div>
 
-      <Dialog open={showImageUploader} onOpenChange={setShowImageUploader}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Image</DialogTitle>
-          </DialogHeader>
-          <ImageUploader onUploadComplete={handleImageUpload} />
-        </DialogContent>
-      </Dialog>
+      {showImageUploader && (
+        <Dialog open={showImageUploader} onOpenChange={setShowImageUploader}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Image</DialogTitle>
+              <DialogDescription>
+                Upload an image to add to your template. Maximum size: 2MB.
+              </DialogDescription>
+            </DialogHeader>
+            <ImageUploader onUploadComplete={handleImageUploadComplete} />
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 };
