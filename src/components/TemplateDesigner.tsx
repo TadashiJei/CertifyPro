@@ -3,9 +3,9 @@ import { DndContext, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
-import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,19 +23,14 @@ import {
   ElementType,
   ElementPosition,
   ElementSize,
+  ElementStyle,
   Template,
   TemplateError,
   TemplateValidationError,
   DEFAULT_ELEMENT_SIZES,
+  DEFAULT_ELEMENT_STYLES,
   DEFAULT_TEMPLATE_DIMENSIONS,
 } from '@/types/template';
-
-type ElementStyle = {
-  fontSize?: number;
-  fontFamily?: string;
-  textAlign?: 'left' | 'center' | 'right';
-  color?: string;
-};
 
 interface TemplateDesignerProps {
   user: User;
@@ -45,7 +40,6 @@ interface TemplateDesignerProps {
 const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   const { user } = useAuth();
   const { templateId } = useParams();
-  const location = useLocation();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
@@ -58,78 +52,12 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   });
   const [showImageUploader, setShowImageUploader] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [isCreating] = useState(location.pathname === '/templates/create');
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const DEFAULT_STYLES: Record<ElementType, Partial<ElementStyle>> = {
-    text: {
-      fontSize: 16,
-      fontFamily: 'Arial',
-      textAlign: 'left',
-      color: '#000000',
-    },
-    image: {},
-    variable: {
-      fontSize: 16,
-      fontFamily: 'Arial',
-      textAlign: 'left',
-      color: '#000000',
-    },
-    qr: {},
-  };
-
-  // Load template data when editing
-  useEffect(() => {
-    const loadTemplate = async () => {
-      // Skip loading if we're creating a new template
-      if (isCreating || !templateId) return;
-
-      try {
-        const { data, error } = await supabase
-          .from('templates')
-          .select('*')
-          .eq('id', templateId)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          setName(data.name);
-          setDescription(data.description || '');
-          try {
-            const designData = typeof data.design_data === 'string' 
-              ? JSON.parse(data.design_data)
-              : data.design_data;
-            
-            setElements(designData.elements || []);
-            setDimensions(designData.dimensions || { width: 210, height: 297 });
-          } catch (parseError) {
-            console.error('Error parsing design data:', parseError);
-            toast({
-              title: 'Warning',
-              description: 'Some template data could not be loaded properly',
-              variant: 'destructive',
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error loading template:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load template',
-          variant: 'destructive',
-        });
-        navigate('/dashboard');
-      }
-    };
-
-    loadTemplate();
-  }, [templateId, isCreating, toast, navigate]);
-
   const handleBack = () => {
     if (saving) return;
-    navigate('/dashboard');
+    navigate('/dashboard', { replace: true });
   };
 
   useEffect(() => {
@@ -159,18 +87,55 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     return () => document.removeEventListener('wheel', handleWheel);
   }, []);
 
+  useEffect(() => {
+    const loadTemplate = async () => {
+      if (!templateId) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('templates')
+          .select('*')
+          .eq('id', templateId)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setName(data.name || '');
+          setDescription(data.description || '');
+          const designData = JSON.parse(data.design_data || '{}');
+          if (designData.dimensions) {
+            setDimensions(designData.dimensions);
+          }
+          setOrientation(designData?.orientation || 'landscape');
+          setElements(designData?.elements || []);
+        }
+      } catch (error) {
+        console.error('Error loading template:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load template',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    loadTemplate();
+  }, [templateId, toast]);
+
   const addElement = (type: ElementType) => {
     try {
       const newElement: TemplateElement = {
-        id: uuidv4(),
+        id: nanoid(),
         type,
         content: type === 'text' ? 'New Text' : '',
         position: { x: 100, y: 100 },
-        size: { width: 200, height: type === 'text' ? 50 : 200 },
-        style: { ...DEFAULT_STYLES[type] },
+        size: { ...DEFAULT_ELEMENT_SIZES[type] },
+        style: { ...DEFAULT_ELEMENT_STYLES[type] },
+        zIndex: elements.length,
       };
 
-      setElements((prev) => [...prev, newElement]);
+      setElements(prev => [...prev, newElement]);
       setSelectedElement(newElement);
 
       if (type === 'image') {
@@ -180,60 +145,46 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
       console.error('Error adding element:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add element',
+        description: 'Failed to add element. Please try again.',
         variant: 'destructive',
       });
     }
   };
 
-  const updateElementStyle = (elementId: string, style: Partial<ElementStyle>) => {
-    setElements((prev) =>
-      prev.map((el) =>
-        el.id === elementId
-          ? {
-              ...el,
-              style: { ...el.style, ...style },
-            }
-          : el
-      )
-    );
-  };
-
-  const handleFontSizeChange = (value: string) => {
-    if (!selectedElement) return;
-    
-    const fontSize = parseInt(value, 10);
-    if (!isNaN(fontSize)) {
-      updateElementStyle(selectedElement.id, { fontSize });
-    }
-  };
-
-  const handleImageUploadComplete = (url: string) => {
+  const handleImageUpload = async (file: File) => {
     try {
-      if (!selectedElement || selectedElement.type !== 'image') return;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${nanoid()}.${fileExt}`;
+      const filePath = `${user?.id}/${fileName}`;
 
-      setElements((prev) =>
-        prev.map((el) =>
-          el.id === selectedElement.id
-            ? {
-                ...el,
-                content: url,
-              }
-            : el
-        )
-      );
+      const { error: uploadError, data } = await supabase.storage
+        .from('template-images')
+        .upload(filePath, file);
 
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('template-images')
+        .getPublicUrl(filePath);
+
+      const newElement: TemplateElement = {
+        id: nanoid(),
+        type: 'image',
+        content: publicUrl,
+        position: { x: 100, y: 100 },
+        size: { width: 200, height: 200 },
+        style: { ...DEFAULT_ELEMENT_STYLES.image },
+        zIndex: elements.length,
+      };
+
+      setElements(prev => [...prev, newElement]);
+      setSelectedElement(newElement);
       setShowImageUploader(false);
-      
-      toast({
-        title: 'Success',
-        description: 'Image added successfully',
-      });
     } catch (error) {
-      console.error('Error setting image URL:', error);
+      console.error('Error uploading image:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add image to template',
+        description: 'Failed to upload image. Please try again.',
         variant: 'destructive',
       });
     }
@@ -310,18 +261,17 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     
     setSaving(true);
     try {
-      const designData = {
-        dimensions,
-        elements,
-      };
-
       const template: Template = {
-        id: templateId || uuidv4(),
+        id: templateId || nanoid(),
         name: name || 'Untitled Template',
         description,
         user_id: user.id,
         is_public: false,
-        design_data: JSON.stringify(designData),
+        design_data: JSON.stringify({
+          dimensions,
+          orientation,
+          elements,
+        }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -330,21 +280,39 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
         .from('templates')
         .upsert(template);
 
-      if (error) throw error;
+      if (error) {
+        throw new TemplateValidationError('Failed to save template', [{
+          code: 'SAVE_ERROR',
+          message: error.message,
+        }]);
+      }
 
       toast({
-        title: 'Success',
-        description: 'Template saved successfully',
+        title: 'Template saved successfully',
+        description: 'Your template has been saved to your account.',
       });
 
-      navigate('/dashboard');
+      if (!templateId) {
+        navigate(`/templates/${template.id}`);
+      }
     } catch (error) {
       console.error('Error saving template:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to save template',
-        variant: 'destructive',
-      });
+      
+      if (error instanceof TemplateValidationError) {
+        error.errors.forEach(err => {
+          toast({
+            title: 'Validation Error',
+            description: err.message,
+            variant: 'destructive',
+          });
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to save template',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -491,248 +459,250 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   }
 
   return (
-    <>
-      <div className="flex h-full overflow-hidden">
-        {/* Left Sidebar - Fixed width */}
-        <div className="w-64 flex-shrink-0 border-r border-border bg-background">
-          <ElementToolbar 
-            onAddElement={addElement}
-            selectedElement={selectedElement}
-            onUpdateElement={updateElement}
-          />
-        </div>
+    <div className="flex h-screen bg-gray-100">
+      {/* Left Sidebar */}
+      <div className="w-64 border-r bg-white">
+        <ElementToolbar 
+          onAddElement={addElement}
+          selectedElement={selectedElement}
+          onUpdateElement={updateElement}
+        />
+      </div>
 
-        {/* Main Content - Flexible width */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b bg-background">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleBack}
-                className="hover:bg-slate-100"
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Back to Dashboard
-              </Button>
-              <div className="h-4 w-px bg-slate-200" />
-              <div className="flex items-center space-x-2">
-                <Input
-                  placeholder="Template Name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-64 bg-white border-slate-200"
-                />
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="border-slate-200">
-                      <Settings className="w-4 h-4 mr-1" />
-                      Template Settings
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80">
-                    <div className="space-y-4">
-                      <div>
-                        <Label>Description</Label>
-                        <Textarea
-                          placeholder="Enter template description"
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          className="mt-1 bg-white border-slate-200"
-                          rows={3}
-                        />
-                      </div>
-                      <div>
-                        <Label>Orientation</Label>
-                        <div className="flex gap-2 mt-1">
-                          <Button
-                            variant={orientation === 'landscape' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setOrientation('landscape')}
-                            className={orientation === 'landscape' ? '' : 'border-slate-200'}
-                          >
-                            <LayoutGrid className="w-4 h-4 mr-1" />
-                            Landscape
-                          </Button>
-                          <Button
-                            variant={orientation === 'portrait' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setOrientation('portrait')}
-                            className={orientation === 'portrait' ? '' : 'border-slate-200'}
-                          >
-                            <LayoutTemplate className="w-4 h-4 mr-1" />
-                            Portrait
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Select
-                  value={dimensions.unit}
-                  onValueChange={(value) => setDimensions({ ...dimensions, unit: value })}
-                >
-                  <SelectTrigger className="w-24 bg-white border-slate-200">
-                    <SelectValue placeholder="Unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="px">Pixels</SelectItem>
-                    <SelectItem value="mm">Millimeters</SelectItem>
-                    <SelectItem value="cm">Centimeters</SelectItem>
-                    <SelectItem value="in">Inches</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  value={dimensions.width}
-                  onChange={(e) => setDimensions({ ...dimensions, width: Number(e.target.value) })}
-                  className="w-20 bg-white border-slate-200"
-                />
-                <span className="text-slate-500">×</span>
-                <Input
-                  type="number"
-                  value={dimensions.height}
-                  onChange={(e) => setDimensions({ ...dimensions, height: Number(e.target.value) })}
-                  className="w-20 bg-white border-slate-200"
-                />
-              </div>
-              <Button 
-                onClick={handleSave}
-                disabled={saving}
-                className="min-w-[100px]"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {/* Canvas */}
-          <div className="flex-1 relative overflow-auto">
-            <DndContext
-              onDragEnd={handleDragEnd}
-              onDragStart={handleDragStart}
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBack}
+              className="hover:bg-slate-100"
             >
-              <DesignCanvas
-                dimensions={{ width: dimensions.width, height: dimensions.height }}
-                setDimensions={(newDimensions) => {
-                  setDimensions({ ...dimensions, ...newDimensions });
-                }}
-                onBack={handleBack}
-                onDeleteElement={removeElement}
-                onAddElement={addElement}
-                selectedElement={selectedElement}
-                onElementSelect={setSelectedElement}
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Back to Dashboard
+            </Button>
+            <div className="h-4 w-px bg-slate-200" />
+            <div className="flex items-center space-x-2">
+              <Input
+                placeholder="Template Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-64 bg-white border-slate-200"
+              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="border-slate-200">
+                    <Settings className="w-4 h-4 mr-1" />
+                    Template Settings
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80">
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Description</Label>
+                      <Textarea
+                        placeholder="Enter template description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        className="mt-1 bg-white border-slate-200"
+                        rows={3}
+                      />
+                    </div>
+                    <div>
+                      <Label>Orientation</Label>
+                      <div className="flex gap-2 mt-1">
+                        <Button
+                          variant={orientation === 'landscape' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setOrientation('landscape')}
+                          className={orientation === 'landscape' ? '' : 'border-slate-200'}
+                        >
+                          <LayoutGrid className="w-4 h-4 mr-1" />
+                          Landscape
+                        </Button>
+                        <Button
+                          variant={orientation === 'portrait' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setOrientation('portrait')}
+                          className={orientation === 'portrait' ? '' : 'border-slate-200'}
+                        >
+                          <LayoutTemplate className="w-4 h-4 mr-1" />
+                          Portrait
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <Select
+                value={dimensions.unit}
+                onValueChange={(value) => setDimensions({ ...dimensions, unit: value })}
               >
-                {elements.map((element) => (
-                  <ResizableElement
-                    key={element.id}
-                    id={element.id}
-                    width={element.size?.width || DEFAULT_ELEMENT_SIZES[element.type].width}
-                    height={element.size?.height || DEFAULT_ELEMENT_SIZES[element.type].height}
-                    style={{
-                      left: element.position.x,
-                      top: element.position.y,
-                      ...element.style,
-                      textAlign: element.style?.textAlign as CSSProperties['textAlign']
-                    }}
-                    onResize={(size) => updateElement(element.id, { size })}
-                    className={selectedElement?.id === element.id ? 'ring-2 ring-primary' : ''}
-                  >
-                    {renderElement(element)}
-                  </ResizableElement>
-                ))}
-              </DesignCanvas>
-            </DndContext>
+                <SelectTrigger className="w-24 bg-white border-slate-200">
+                  <SelectValue placeholder="Unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="px">Pixels</SelectItem>
+                  <SelectItem value="mm">Millimeters</SelectItem>
+                  <SelectItem value="cm">Centimeters</SelectItem>
+                  <SelectItem value="in">Inches</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                value={dimensions.width}
+                onChange={(e) => setDimensions({ ...dimensions, width: Number(e.target.value) })}
+                className="w-20 bg-white border-slate-200"
+              />
+              <span className="text-slate-500">×</span>
+              <Input
+                type="number"
+                value={dimensions.height}
+                onChange={(e) => setDimensions({ ...dimensions, height: Number(e.target.value) })}
+                className="w-20 bg-white border-slate-200"
+              />
+            </div>
+            <Button 
+              onClick={handleSave}
+              disabled={saving}
+              className="min-w-[100px]"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </>
+              )}
+            </Button>
           </div>
         </div>
 
-        {/* Right Sidebar - Fixed width, only shown when element selected */}
-        {selectedElement && (
-          <div className="w-64 flex-shrink-0 border-l border-border bg-background overflow-y-auto">
-            <div className="p-4">
-              <h3 className="text-sm font-medium mb-4">Element Properties</h3>
-              <div className="space-y-4">
-                {selectedElement.type === 'text' && (
-                  <>
-                    <div>
-                      <Label>Text Content</Label>
-                      <Input
-                        value={selectedElement.content}
-                        onChange={(e) => updateElement(selectedElement.id, { content: e.target.value })}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label>Font Size</Label>
-                      <Input
-                        type="number"
-                        value={selectedElement.style?.fontSize || 16}
-                        onChange={(e) => handleFontSizeChange(e.target.value)}
-                        min={8}
-                        max={72}
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="grid grid-cols-2 gap-2">
+        {/* Canvas */}
+        <div className="flex-1 relative overflow-auto">
+          <DndContext
+            onDragEnd={handleDragEnd}
+            onDragStart={handleDragStart}
+          >
+            <DesignCanvas
+              dimensions={{ width: dimensions.width, height: dimensions.height }}
+              setDimensions={(newDimensions) => {
+                setDimensions({ ...dimensions, ...newDimensions });
+              }}
+              onBack={handleBack}
+              onDeleteElement={removeElement}
+              onAddElement={addElement}
+              selectedElement={selectedElement}
+              onElementSelect={setSelectedElement}
+            >
+              {elements.map((element) => (
+                <ResizableElement
+                  key={element.id}
+                  id={element.id}
+                  width={element.size?.width || DEFAULT_ELEMENT_SIZES[element.type].width}
+                  height={element.size?.height || DEFAULT_ELEMENT_SIZES[element.type].height}
+                  style={{
+                    left: element.position.x,
+                    top: element.position.y,
+                    ...element.style,
+                    textAlign: element.style?.textAlign as CSSProperties['textAlign']
+                  }}
+                  onResize={(size) => updateElement(element.id, { size })}
+                  className={selectedElement?.id === element.id ? 'ring-2 ring-primary' : ''}
+                >
+                  {renderElement(element)}
+                </ResizableElement>
+              ))}
+            </DesignCanvas>
+          </DndContext>
+        </div>
+      </div>
+
+      {/* Right Sidebar - Properties */}
+      {selectedElement && (
+        <div className="w-64 border-l bg-white overflow-y-auto">
+          <div className="p-4">
+            <h3 className="text-sm font-medium mb-4">Element Properties</h3>
+            <div className="space-y-4">
+              {selectedElement.type === 'text' && (
+                <>
                   <div>
-                    <Label>X Position</Label>
+                    <Label>Text Content</Label>
                     <Input
-                      type="number"
-                      value={Math.round(selectedElement.position.x)}
-                      onChange={(e) => updateElement(selectedElement.id, {
-                        position: { ...selectedElement.position, x: Number(e.target.value) }
-                      })}
+                      value={selectedElement.content}
+                      onChange={(e) => updateElement(selectedElement.id, { content: e.target.value })}
                       className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label>Y Position</Label>
+                    <Label>Font Size</Label>
                     <Input
                       type="number"
-                      value={Math.round(selectedElement.position.y)}
+                      value={typeof selectedElement.style?.fontSize === 'string' 
+                        ? parseInt(selectedElement.style.fontSize) 
+                        : selectedElement.style?.fontSize || 16}
                       onChange={(e) => updateElement(selectedElement.id, {
-                        position: { ...selectedElement.position, y: Number(e.target.value) }
+                        style: { ...selectedElement.style, fontSize: Number(e.target.value) }
                       })}
                       className="mt-1"
+                      min={8}
+                      max={72}
                     />
                   </div>
+                </>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>X Position</Label>
+                  <Input
+                    type="number"
+                    value={Math.round(selectedElement.position.x)}
+                    onChange={(e) => updateElement(selectedElement.id, {
+                      position: { ...selectedElement.position, x: Number(e.target.value) }
+                    })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Y Position</Label>
+                  <Input
+                    type="number"
+                    value={Math.round(selectedElement.position.y)}
+                    onChange={(e) => updateElement(selectedElement.id, {
+                      position: { ...selectedElement.position, y: Number(e.target.value) }
+                    })}
+                    className="mt-1"
+                  />
                 </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
-
-      {showImageUploader && (
-        <Dialog open={showImageUploader} onOpenChange={setShowImageUploader}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Image</DialogTitle>
-              <DialogDescription>
-                Upload an image to add to your template. Maximum size: 2MB.
-              </DialogDescription>
-            </DialogHeader>
-            <ImageUploader onUploadComplete={handleImageUploadComplete} />
-          </DialogContent>
-        </Dialog>
+        </div>
       )}
-    </>
+
+      {/* Variable Dialog */}
+      <Dialog open={showImageUploader} onOpenChange={setShowImageUploader}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Image</DialogTitle>
+            <DialogDescription>
+              Upload an image to add to your template
+            </DialogDescription>
+          </DialogHeader>
+          <ImageUploader onUploadComplete={handleImageUpload} />
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

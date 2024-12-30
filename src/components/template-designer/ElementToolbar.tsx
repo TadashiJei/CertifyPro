@@ -29,9 +29,9 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({
   onAddElement,
   selectedElement,
   onUpdateElement,
-  variableTypes,
+  variableTypes = {}, // Provide default empty object
 }) => {
-  const updateStyle = (key: string, value: string) => {
+  const updateStyle = (key: string, value: string | number) => {
     onUpdateElement({
       style: {
         ...selectedElement?.style,
@@ -83,114 +83,142 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({
         ))}
       </div>
 
-      {selectedElement && selectedElement.type === 'text' && (
-        <div className="space-y-4 p-4 border rounded-lg">
-          <div className="space-y-4">
-            <Textarea
-              value={selectedElement.content}
-              onChange={(e) => onUpdateElement({ content: e.target.value })}
-              placeholder="Enter text content"
-              className="min-h-[100px]"
-            />
-            
-            <div className="flex flex-wrap gap-2 items-center">
-              <FontSelector
-                value={selectedElement.style?.fontFamily || 'Arial'}
-                onChange={(value) => updateStyle('fontFamily', value)}
+      {selectedElement && (
+        <div className="space-y-4 p-4 border-t">
+          {/* Text Element Controls */}
+          {selectedElement.type === 'text' && (
+            <div className="space-y-4">
+              <Textarea
+                value={selectedElement.content}
+                onChange={(e) => onUpdateElement({ content: e.target.value })}
+                placeholder="Enter text content"
+                className="min-h-[100px]"
               />
               
-              <Input
-                type="number"
-                value={parseInt(selectedElement.style?.fontSize || '16')}
-                onChange={(e) => updateStyle('fontSize', `${e.target.value}px`)}
-                className="w-20"
-              />
-
-              <div className="flex gap-1">
-                <Button
-                  variant={selectedElement.style?.fontWeight === 'bold' ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={() => updateStyle('fontWeight', selectedElement.style?.fontWeight === 'bold' ? 'normal' : 'bold')}
-                >
-                  <Bold className="w-4 h-4" />
-                </Button>
+              <div className="flex flex-wrap gap-2 items-center">
+                <FontSelector
+                  value={selectedElement.style?.fontFamily || 'Arial'}
+                  onChange={(value) => updateStyle('fontFamily', value)}
+                />
                 
-                <Button
-                  variant={selectedElement.style?.fontStyle === 'italic' ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={() => updateStyle('fontStyle', selectedElement.style?.fontStyle === 'italic' ? 'normal' : 'italic')}
-                >
-                  <Italic className="w-4 h-4" />
-                </Button>
+                <Input
+                  type="number"
+                  value={selectedElement.style?.fontSize || 16}
+                  onChange={(e) => updateStyle('fontSize', Number(e.target.value))}
+                  className="w-20"
+                />
+
+                <div className="flex gap-1">
+                  <Button
+                    variant={selectedElement.style?.fontWeight === 'bold' ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={() => updateStyle('fontWeight', selectedElement.style?.fontWeight === 'bold' ? 'normal' : 'bold')}
+                  >
+                    <Bold className="w-4 h-4" />
+                  </Button>
+                  
+                  <Button
+                    variant={selectedElement.style?.fontStyle === 'italic' ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={() => updateStyle('fontStyle', selectedElement.style?.fontStyle === 'italic' ? 'normal' : 'italic')}
+                  >
+                    <Italic className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <div className="flex gap-1">
+                  <Button
+                    variant={selectedElement.style?.textAlign === 'left' ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={() => updateStyle('textAlign', 'left')}
+                  >
+                    <AlignLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <Button
+                    variant={selectedElement.style?.textAlign === 'center' ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={() => updateStyle('textAlign', 'center')}
+                  >
+                    <AlignCenter className="w-4 h-4" />
+                  </Button>
+                  
+                  <Button
+                    variant={selectedElement.style?.textAlign === 'right' ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={() => updateStyle('textAlign', 'right')}
+                  >
+                    <AlignRight className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <Input
+                  type="color"
+                  value={selectedElement.style?.color || '#000000'}
+                  onChange={(e) => updateStyle('color', e.target.value)}
+                  className="w-10 h-10 p-1"
+                />
               </div>
-
-              <div className="flex gap-1">
-                <Button
-                  variant={selectedElement.style?.textAlign === 'left' ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={() => updateStyle('textAlign', 'left')}
-                >
-                  <AlignLeft className="w-4 h-4" />
-                </Button>
-                
-                <Button
-                  variant={selectedElement.style?.textAlign === 'center' ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={() => updateStyle('textAlign', 'center')}
-                >
-                  <AlignCenter className="w-4 h-4" />
-                </Button>
-                
-                <Button
-                  variant={selectedElement.style?.textAlign === 'right' ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={() => updateStyle('textAlign', 'right')}
-                >
-                  <AlignRight className="w-4 h-4" />
-                </Button>
-              </div>
-
-              <Input
-                type="color"
-                value={selectedElement.style?.color || '#000000'}
-                onChange={(e) => updateStyle('color', e.target.value)}
-                className="w-10 h-10 p-1"
-              />
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {selectedElement && selectedElement.type === 'variable' && (
-        <div className="space-y-4 p-4 border rounded-lg">
-          <Tabs defaultValue="recipient">
-            <TabsList>
-              {Object.keys(variableTypes).map((type) => (
-                <TabsTrigger key={type} value={type} className="capitalize">
-                  {type}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {Object.entries(variableTypes).map(([type, variables]) => (
-              <TabsContent key={type} value={type}>
-                <Select
-                  value={selectedElement.content}
-                  onValueChange={(value) => onUpdateElement({ content: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={`Select ${type} variable`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {variables.map((variable) => (
-                      <SelectItem key={variable} value={`{{${type}.${variable}}}`}>
-                        {variable}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </TabsContent>
-            ))}
-          </Tabs>
+          {/* Variable Element Controls */}
+          {selectedElement.type === 'variable' && (
+            <div className="space-y-4">
+              <Tabs defaultValue={Object.keys(variableTypes)[0] || 'recipient'}>
+                <TabsList className="w-full">
+                  {Object.keys(variableTypes).map((type) => (
+                    <TabsTrigger key={type} value={type} className="flex-1 capitalize">
+                      {type}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {Object.entries(variableTypes).map(([type, variables]) => (
+                  <TabsContent key={type} value={type}>
+                    <Select
+                      value={selectedElement.content}
+                      onValueChange={(value) => onUpdateElement({ content: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={`Select ${type} variable`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {variables.map((variable) => (
+                          <SelectItem key={variable} value={`{{${type}.${variable}}}`}>
+                            {variable}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TabsContent>
+                ))}
+              </Tabs>
+
+              <div className="space-y-2">
+                <Label>Appearance</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    type="number"
+                    value={selectedElement.style?.fontSize || 16}
+                    onChange={(e) => updateStyle('fontSize', Number(e.target.value))}
+                    className="w-20"
+                  />
+                  <Input
+                    type="color"
+                    value={selectedElement.style?.color || '#000000'}
+                    onChange={(e) => updateStyle('color', e.target.value)}
+                    className="w-10 h-10 p-1"
+                  />
+                  <Input
+                    type="color"
+                    value={selectedElement.style?.backgroundColor || '#f0f9ff'}
+                    onChange={(e) => updateStyle('backgroundColor', e.target.value)}
+                    className="w-10 h-10 p-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

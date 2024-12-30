@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { Loader2 } from 'lucide-react';
 
 interface ImageUploaderProps {
@@ -12,9 +13,14 @@ interface ImageUploaderProps {
 export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }) => {
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const uploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
+      if (!user) {
+        throw new Error('You must be logged in to upload images');
+      }
+
       setUploading(true);
 
       if (!event.target.files || event.target.files.length === 0) {
@@ -36,58 +42,62 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onUploadComplete }
       // Generate a unique filename
       const fileExt = file.name.split('.').pop() || 'jpg';
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `template-images/${fileName}`;
 
-      let { error: uploadError, data } = await supabase.storage
-        .from('certificates')
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type,
+      // Upload the file to template-images bucket
+      const { data, error: uploadError } = await supabase.storage
+        .from('template-images')
+        .upload(fileName, file, {
+          upsert: false
         });
 
       if (uploadError) {
         throw uploadError;
       }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('certificates')
-        .getPublicUrl(filePath);
-
-      if (!publicUrl) {
-        throw new Error('Failed to get public URL for uploaded image');
+      if (!data) {
+        throw new Error('Upload failed');
       }
 
-      onUploadComplete(publicUrl);
+      // Get the public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('template-images')
+        .getPublicUrl(data.path);
 
+      if (!publicUrlData.publicUrl) {
+        throw new Error('Failed to get public URL');
+      }
+
+      onUploadComplete(publicUrlData.publicUrl);
+      
       toast({
         title: 'Success',
         description: 'Image uploaded successfully',
       });
-    } catch (error: any) {
-      console.error('Error uploading image:', error);
+    } catch (error) {
       toast({
         title: 'Error',
-        description: error.message || 'Error uploading image',
+        description: error instanceof Error ? error.message : 'Failed to upload image',
         variant: 'destructive',
       });
     } finally {
       setUploading(false);
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="grid w-full max-w-sm items-center gap-1.5">
-        <Input
-          type="file"
-          accept="image/*"
-          onChange={uploadImage}
-          disabled={uploading}
-        />
-      </div>
+      <Input
+        type="file"
+        accept="image/*"
+        onChange={uploadImage}
+        disabled={uploading}
+      />
       {uploading && (
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="flex items-center justify-center">
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
           <span>Uploading...</span>
         </div>
       )}
