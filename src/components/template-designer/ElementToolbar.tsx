@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FontSelector } from './FontSelector';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Bold, 
@@ -17,11 +19,12 @@ import {
   QrCode,
   Plus
 } from 'lucide-react';
+import { TemplateElement } from '@/types/template';
 
 interface ElementToolbarProps {
   onAddElement: (type: string) => void;
-  selectedElement: any;
-  onUpdateElement: (updates: any) => void;
+  selectedElement: TemplateElement | null;
+  onUpdateElement: (id: string, updates: Partial<TemplateElement>) => void;
   variableTypes: Record<string, string[]>;
 }
 
@@ -31,13 +34,22 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({
   onUpdateElement,
   variableTypes = {}, // Provide default empty object
 }) => {
+  const [showVariableDialog, setShowVariableDialog] = useState(false);
+
   const updateStyle = (key: string, value: string | number) => {
-    onUpdateElement({
+    if (!selectedElement) return;
+    
+    onUpdateElement(selectedElement.id, {
       style: {
-        ...selectedElement?.style,
+        ...selectedElement.style,
         [key]: value,
       },
     });
+  };
+
+  const updateContent = (content: string) => {
+    if (!selectedElement) return;
+    onUpdateElement(selectedElement.id, { content });
   };
 
   const tools = [
@@ -57,7 +69,10 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({
       id: 'variable',
       label: 'Add Variable',
       icon: Variable,
-      onClick: () => onAddElement('variable')
+      onClick: () => {
+        onAddElement('variable');
+        setShowVariableDialog(true);
+      }
     },
     {
       id: 'qr',
@@ -67,159 +82,160 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({
     }
   ];
 
-  return (
-    <div className="flex-1 overflow-auto bg-white">
-      <div className="p-4 space-y-2">
-        {tools.map((tool) => (
-          <Button
-            key={tool.id}
-            variant="ghost"
-            className="w-full justify-start gap-2 h-12 hover:bg-slate-50 text-slate-700 hover:text-slate-900"
-            onClick={tool.onClick}
-          >
-            <tool.icon className="w-5 h-5 text-slate-500" />
-            <span>{tool.label}</span>
-          </Button>
-        ))}
-      </div>
-
-      {selectedElement && (
-        <div className="space-y-4 p-4 border-t">
-          {/* Text Element Controls */}
-          {selectedElement.type === 'text' && (
-            <div className="space-y-4">
-              <Textarea
-                value={selectedElement.content}
-                onChange={(e) => onUpdateElement({ content: e.target.value })}
-                placeholder="Enter text content"
-                className="min-h-[100px]"
-              />
-              
-              <div className="flex flex-wrap gap-2 items-center">
-                <FontSelector
-                  value={selectedElement.style?.fontFamily || 'Arial'}
-                  onChange={(value) => updateStyle('fontFamily', value)}
-                />
-                
-                <Input
-                  type="number"
-                  value={selectedElement.style?.fontSize || 16}
-                  onChange={(e) => updateStyle('fontSize', Number(e.target.value))}
-                  className="w-20"
-                />
-
-                <div className="flex gap-1">
-                  <Button
-                    variant={selectedElement.style?.fontWeight === 'bold' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => updateStyle('fontWeight', selectedElement.style?.fontWeight === 'bold' ? 'normal' : 'bold')}
-                  >
-                    <Bold className="w-4 h-4" />
-                  </Button>
-                  
-                  <Button
-                    variant={selectedElement.style?.fontStyle === 'italic' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => updateStyle('fontStyle', selectedElement.style?.fontStyle === 'italic' ? 'normal' : 'italic')}
-                  >
-                    <Italic className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <div className="flex gap-1">
-                  <Button
-                    variant={selectedElement.style?.textAlign === 'left' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => updateStyle('textAlign', 'left')}
-                  >
-                    <AlignLeft className="w-4 h-4" />
-                  </Button>
-                  
-                  <Button
-                    variant={selectedElement.style?.textAlign === 'center' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => updateStyle('textAlign', 'center')}
-                  >
-                    <AlignCenter className="w-4 h-4" />
-                  </Button>
-                  
-                  <Button
-                    variant={selectedElement.style?.textAlign === 'right' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => updateStyle('textAlign', 'right')}
-                  >
-                    <AlignRight className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <Input
-                  type="color"
-                  value={selectedElement.style?.color || '#000000'}
-                  onChange={(e) => updateStyle('color', e.target.value)}
-                  className="w-10 h-10 p-1"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Variable Element Controls */}
-          {selectedElement.type === 'variable' && (
-            <div className="space-y-4">
-              <Tabs defaultValue={Object.keys(variableTypes)[0] || 'recipient'}>
-                <TabsList className="w-full">
-                  {Object.keys(variableTypes).map((type) => (
-                    <TabsTrigger key={type} value={type} className="flex-1 capitalize">
-                      {type}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                {Object.entries(variableTypes).map(([type, variables]) => (
-                  <TabsContent key={type} value={type}>
-                    <Select
-                      value={selectedElement.content}
-                      onValueChange={(value) => onUpdateElement({ content: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={`Select ${type} variable`} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {variables.map((variable) => (
-                          <SelectItem key={variable} value={`{{${type}.${variable}}}`}>
-                            {variable}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TabsContent>
-                ))}
-              </Tabs>
-
-              <div className="space-y-2">
-                <Label>Appearance</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    type="number"
-                    value={selectedElement.style?.fontSize || 16}
-                    onChange={(e) => updateStyle('fontSize', Number(e.target.value))}
-                    className="w-20"
-                  />
-                  <Input
-                    type="color"
-                    value={selectedElement.style?.color || '#000000'}
-                    onChange={(e) => updateStyle('color', e.target.value)}
-                    className="w-10 h-10 p-1"
-                  />
-                  <Input
-                    type="color"
-                    value={selectedElement.style?.backgroundColor || '#f0f9ff'}
-                    onChange={(e) => updateStyle('backgroundColor', e.target.value)}
-                    className="w-10 h-10 p-1"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+  if (!selectedElement) {
+    return (
+      <div className="p-4 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {tools.map((tool) => (
+            <Button
+              key={tool.id}
+              variant="outline"
+              size="sm"
+              onClick={tool.onClick}
+            >
+              <tool.icon className="w-4 h-4 mr-2" />
+              {tool.label}
+            </Button>
+          ))}
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      {selectedElement.type === 'text' && (
+        <>
+          <div>
+            <Label>Text Content</Label>
+            <Textarea
+              value={selectedElement.content || ''}
+              onChange={(e) => updateContent(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label>Font Family</Label>
+            <FontSelector
+              value={selectedElement.style?.fontFamily || 'Arial'}
+              onChange={(value) => updateStyle('fontFamily', value)}
+            />
+          </div>
+          <div>
+            <Label>Font Size</Label>
+            <Input
+              type="number"
+              value={selectedElement.style?.fontSize || 16}
+              onChange={(e) => updateStyle('fontSize', Number(e.target.value))}
+              className="mt-1"
+              min={8}
+              max={72}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={selectedElement.style?.fontWeight === 'bold' ? 'default' : 'outline'}
+              size="icon"
+              onClick={() => updateStyle('fontWeight', selectedElement.style?.fontWeight === 'bold' ? 'normal' : 'bold')}
+            >
+              <Bold className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={selectedElement.style?.fontStyle === 'italic' ? 'default' : 'outline'}
+              size="icon"
+              onClick={() => updateStyle('fontStyle', selectedElement.style?.fontStyle === 'italic' ? 'normal' : 'italic')}
+            >
+              <Italic className="w-4 h-4" />
+            </Button>
+          </div>
+        </>
+      )}
+
+      {selectedElement.type === 'variable' && (
+        <>
+          <Button 
+            variant="outline" 
+            onClick={() => setShowVariableDialog(true)}
+            className="w-full"
+          >
+            {selectedElement.content || 'Select Variable'}
+          </Button>
+
+          <Dialog open={showVariableDialog} onOpenChange={setShowVariableDialog}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Select Variable</DialogTitle>
+                <DialogDescription>
+                  Choose a variable to insert into your template
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-4">
+                <Tabs defaultValue={Object.keys(variableTypes)[0] || 'recipient'}>
+                  <TabsList className="w-full">
+                    {Object.keys(variableTypes).length > 0 ? (
+                      Object.keys(variableTypes).map((type) => (
+                        <TabsTrigger 
+                          key={type} 
+                          value={type}
+                          className="flex-1"
+                        >
+                          {type}
+                        </TabsTrigger>
+                      ))
+                    ) : (
+                      <TabsTrigger value="recipient" className="flex-1">Recipient</TabsTrigger>
+                    )}
+                  </TabsList>
+                  {Object.keys(variableTypes).length > 0 ? (
+                    Object.entries(variableTypes).map(([type, variables]) => (
+                      <TabsContent key={type} value={type} className="mt-4">
+                        <div className="grid grid-cols-2 gap-2">
+                          {variables.map((variable) => (
+                            <Button
+                              key={variable}
+                              variant="outline"
+                              onClick={() => {
+                                onUpdateElement(selectedElement.id, {
+                                  content: `{{${type}.${variable}}}`,
+                                  variableType: type
+                                });
+                                setShowVariableDialog(false);
+                              }}
+                              className="justify-start"
+                            >
+                              {variable}
+                            </Button>
+                          ))}
+                        </div>
+                      </TabsContent>
+                    ))
+                  ) : (
+                    <TabsContent value="recipient" className="mt-4">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['name', 'email', 'id', 'date'].map((variable) => (
+                          <Button
+                            key={variable}
+                            variant="outline"
+                            onClick={() => {
+                              onUpdateElement(selectedElement.id, {
+                                content: `{{recipient.${variable}}}`,
+                                variableType: 'recipient'
+                              });
+                              setShowVariableDialog(false);
+                            }}
+                            className="justify-start"
+                          >
+                            {variable}
+                          </Button>
+                        ))}
+                      </div>
+                    </TabsContent>
+                  )}
+                </Tabs>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
       )}
     </div>
   );

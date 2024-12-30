@@ -55,6 +55,15 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Default variable types
+  const defaultVariableTypes: Record<string, string[]> = {
+    recipient: ['name', 'email', 'id', 'date'],
+    certificate: ['title', 'description', 'issueDate', 'expiryDate'],
+    issuer: ['name', 'organization', 'signature', 'logo']
+  };
+
+  const [variableTypes, setVariableTypes] = useState<Record<string, string[]>>(defaultVariableTypes);
+
   const handleBack = () => {
     if (saving) return;
     navigate('/dashboard', { replace: true });
@@ -129,7 +138,7 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
         id: nanoid(),
         type,
         content: type === 'text' ? 'New Text' : '',
-        position: { x: 100, y: 100 },
+        position: { x: dimensions.width / 4, y: dimensions.height / 4 },
         size: { ...DEFAULT_ELEMENT_SIZES[type] },
         style: { ...DEFAULT_ELEMENT_STYLES[type] },
         zIndex: elements.length,
@@ -145,46 +154,7 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
       console.error('Error adding element:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add element. Please try again.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleImageUpload = async (file: File) => {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${nanoid()}.${fileExt}`;
-      const filePath = `${user?.id}/${fileName}`;
-
-      const { error: uploadError, data } = await supabase.storage
-        .from('template-images')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('template-images')
-        .getPublicUrl(filePath);
-
-      const newElement: TemplateElement = {
-        id: nanoid(),
-        type: 'image',
-        content: publicUrl,
-        position: { x: 100, y: 100 },
-        size: { width: 200, height: 200 },
-        style: { ...DEFAULT_ELEMENT_STYLES.image },
-        zIndex: elements.length,
-      };
-
-      setElements(prev => [...prev, newElement]);
-      setSelectedElement(newElement);
-      setShowImageUploader(false);
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to upload image. Please try again.',
+        description: 'Failed to add element',
         variant: 'destructive',
       });
     }
@@ -195,65 +165,61 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
       setElements((prevElements) => {
         const elementIndex = prevElements.findIndex((e) => e.id === id);
         if (elementIndex === -1) {
-          throw new TemplateValidationError('Element not found');
+          console.warn(`Element with id ${id} not found`);
+          return prevElements;
         }
 
+        const prevElement = prevElements[elementIndex];
         const updatedElement = {
-          ...prevElements[elementIndex],
+          ...prevElement,
           ...updates,
-          content: updates.content 
-            ? updates.content
-            : prevElements[elementIndex].content,
+          position: updates.position || prevElement.position,
+          size: updates.size || prevElement.size,
+          style: {
+            ...prevElement.style,
+            ...(updates.style || {}),
+          },
+          content: updates.content !== undefined ? updates.content : prevElement.content,
+          variableType: updates.variableType || prevElement.variableType,
         };
 
         const newElements = [...prevElements];
         newElements[elementIndex] = updatedElement;
+
+        // Update selected element if it's the one being modified
+        if (selectedElement?.id === id) {
+          setSelectedElement(updatedElement);
+        }
+
         return newElements;
       });
     } catch (error) {
-      if (error instanceof TemplateValidationError) {
-        toast({
-          title: 'Error',
-          description: `Failed to update element: ${error.message}`,
-          variant: 'destructive',
-        });
-      } else {
-        console.error('Error updating element:', error);
-        toast({
-          title: 'Error',
-          description: 'An unexpected error occurred while updating the element',
-          variant: 'destructive',
-        });
-      }
+      console.error('Error updating element:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update element',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleImageUpload = (url: string) => {
+    if (selectedElement && selectedElement.type === 'image') {
+      updateElement(selectedElement.id, { content: url });
+      setShowImageUploader(false);
     }
   };
 
   const removeElement = (id: string) => {
-    try {
-      setElements((prevElements) => {
-        const elementIndex = prevElements.findIndex((e) => e.id === id);
-        if (elementIndex === -1) {
-          throw new TemplateValidationError('Element not found');
-        }
-        return prevElements.filter((e) => e.id !== id);
-      });
-      setSelectedElement(null);
-    } catch (error) {
-      if (error instanceof TemplateValidationError) {
-        toast({
-          title: 'Error',
-          description: `Failed to remove element: ${error.message}`,
-          variant: 'destructive',
-        });
-      } else {
-        console.error('Error removing element:', error);
-        toast({
-          title: 'Error',
-          description: 'An unexpected error occurred while removing the element',
-          variant: 'destructive',
-        });
+    setElements((prevElements) => {
+      const elementIndex = prevElements.findIndex((e) => e.id === id);
+      if (elementIndex === -1) {
+        return prevElements;
       }
-    }
+      const newElements = prevElements.filter((e) => e.id !== id);
+      return newElements;
+    });
+    setSelectedElement(null);
   };
 
   const handleSave = async () => {
@@ -318,6 +284,23 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     }
   };
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, delta } = event;
+    if (!active) return;
+
+    const id = active.id as string;
+    const element = elements.find((e) => e.id === id);
+    if (!element) return;
+
+    const newPosition = {
+      x: element.position.x + delta.x,
+      y: element.position.y + delta.y,
+    };
+
+    updateElement(id, { position: newPosition });
+    setDraggingElement(null);
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const draggedElement = elements.find(el => el.id === active.id);
@@ -325,25 +308,6 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
       setDraggingElement(draggedElement);
       setSelectedElement(draggedElement);
     }
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, delta } = event;
-    
-    setElements(elements.map(element => {
-      if (element.id === active.id) {
-        return {
-          ...element,
-          position: {
-            x: element.position.x + delta.x,
-            y: element.position.y + delta.y,
-          },
-        };
-      }
-      return element;
-    }));
-    
-    setDraggingElement(null);
   };
 
   const renderElement = (element: TemplateElement) => {
@@ -466,6 +430,7 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
           onAddElement={addElement}
           selectedElement={selectedElement}
           onUpdateElement={updateElement}
+          variableTypes={variableTypes}
         />
       </div>
 
