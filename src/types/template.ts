@@ -1,32 +1,29 @@
-import { Json } from '@/types/supabase';
+import { Json } from './supabase';
 
 export type ElementType = 'text' | 'image' | 'variable' | 'qr';
-
-export interface ElementSize {
-  width: number;
-  height: number;
-}
 
 export interface ElementPosition {
   x: number;
   y: number;
 }
 
+export interface ElementSize {
+  width: number;
+  height: number;
+}
+
 export interface ElementStyle {
-  backgroundColor?: string;
   color?: string;
-  fontSize?: string;
+  backgroundColor?: string;
+  fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right';
-  borderWidth?: string;
-  borderStyle?: string;
-  borderColor?: string;
-  borderRadius?: string;
-  padding?: string;
   opacity?: number;
-  transform?: string;
-  filter?: string;
+  borderRadius?: number;
+  padding?: number;
+  margin?: number;
+  border?: string;
   boxShadow?: string;
 }
 
@@ -46,29 +43,25 @@ export interface Template {
   description?: string;
   user_id: string;
   is_public: boolean;
-  design_data: {
-    dimensions: ElementSize;
-    elements: TemplateElement[];
-  };
-  created_at?: string;
-  updated_at?: string;
+  design_data: string; // JSON stringified { dimensions: ElementSize; elements: TemplateElement[]; }
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TemplateError {
   code: string;
   message: string;
-  field?: string;
 }
 
 export class TemplateValidationError extends Error {
-  constructor(message: string, public errors: TemplateError[]) {
+  constructor(message: string, public errors: TemplateError[] = []) {
     super(message);
     this.name = 'TemplateValidationError';
   }
 }
 
 export const DEFAULT_ELEMENT_SIZES: Record<ElementType, ElementSize> = {
-  text: { width: 200, height: 40 },
+  text: { width: 200, height: 50 },
   image: { width: 200, height: 200 },
   variable: { width: 150, height: 30 },
   qr: { width: 100, height: 100 },
@@ -77,31 +70,23 @@ export const DEFAULT_ELEMENT_SIZES: Record<ElementType, ElementSize> = {
 export const DEFAULT_ELEMENT_STYLES: Record<ElementType, ElementStyle> = {
   text: {
     color: '#000000',
-    fontSize: '16px',
-    fontFamily: 'Arial',
+    fontSize: 16,
+    fontFamily: 'sans-serif',
     textAlign: 'left',
-    padding: '4px',
   },
   image: {
-    borderRadius: '4px',
-    padding: '4px',
+    borderRadius: 0,
   },
   variable: {
-    color: '#1e40af',
-    fontSize: '14px',
+    color: '#666666',
+    fontSize: 14,
     fontFamily: 'monospace',
-    backgroundColor: '#f8fafc',
-    padding: '4px',
-    borderRadius: '4px',
+    backgroundColor: '#f5f5f5',
+    padding: 4,
+    borderRadius: 4,
   },
   qr: {
     backgroundColor: '#ffffff',
-    padding: '8px',
-    borderRadius: '4px',
+    padding: 8,
   },
-};
-
-export const DEFAULT_TEMPLATE_DIMENSIONS: ElementSize = {
-  width: 595, // A4 width in pixels at 72 DPI
-  height: 842, // A4 height in pixels at 72 DPI
 };

@@ -3,9 +3,9 @@ import { DndContext, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { nanoid } from 'nanoid';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
+import { nanoid } from 'nanoid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -122,108 +122,68 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
 
   const addElement = (type: ElementType) => {
     try {
-      if (type === 'image') {
-        setShowImageUploader(true);
-        return;
-      }
-
       const newElement: TemplateElement = {
         id: nanoid(),
         type,
-        content: sanitizeContent(type === 'text' ? 'New Text' : type === 'variable' ? '{{Variable}}' : 'QR Code', type),
+        content: type === 'text' ? 'New Text' : '',
         position: { x: 100, y: 100 },
-        size: DEFAULT_ELEMENT_SIZES[type],
-        style: DEFAULT_ELEMENT_STYLES[type],
+        size: { ...DEFAULT_ELEMENT_SIZES[type] },
+        style: { ...DEFAULT_ELEMENT_STYLES[type] },
         zIndex: elements.length,
       };
 
-      validateElement(newElement);
       setElements(prev => [...prev, newElement]);
       setSelectedElement(newElement);
-    } catch (error) {
-      if (error instanceof TemplateValidationError) {
-        toast({
-          title: 'Error',
-          description: `Failed to add element: ${error.message}`,
-          variant: 'destructive',
-        });
-      } else {
-        console.error('Error adding element:', error);
-        toast({
-          title: 'Error',
-          description: 'An unexpected error occurred while adding the element',
-          variant: 'destructive',
-        });
+
+      if (type === 'image') {
+        setShowImageUploader(true);
       }
+    } catch (error) {
+      console.error('Error adding element:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add element. Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 
-  const handleImageUpload = async (url: string) => {
+  const handleImageUpload = async (file: File) => {
     try {
-      if (!isValidImageUrl(url)) {
-        throw new TemplateValidationError('Invalid image URL');
-      }
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${nanoid()}.${fileExt}`;
+      const filePath = `${user?.id}/${fileName}`;
 
-      // Create a temporary image to get dimensions
-      const img = new Image();
-      img.src = url;
-      
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          try {
-            // Calculate dimensions while maintaining aspect ratio
-            let width = img.width;
-            let height = img.height;
-            const maxSize = 200;
-            
-            if (width > height) {
-              if (width > maxSize) {
-                height = (height * maxSize) / width;
-                width = maxSize;
-              }
-            } else {
-              if (height > maxSize) {
-                width = (width * maxSize) / height;
-                height = maxSize;
-              }
-            }
+      const { error: uploadError, data } = await supabase.storage
+        .from('template-images')
+        .upload(filePath, file);
 
-            const newElement: TemplateElement = {
-              id: nanoid(),
-              type: 'image',
-              content: url,
-              position: { x: 100, y: 100 },
-              size: { width, height },
-              style: DEFAULT_ELEMENT_STYLES.image,
-              zIndex: elements.length,
-            };
+      if (uploadError) throw uploadError;
 
-            validateElement(newElement);
-            setElements(prev => [...prev, newElement]);
-            setSelectedElement(newElement);
-            setShowImageUploader(false);
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        };
-        img.onerror = () => reject(new TemplateValidationError('Failed to load image'));
-      });
+      const { data: { publicUrl } } = supabase.storage
+        .from('template-images')
+        .getPublicUrl(filePath);
+
+      const newElement: TemplateElement = {
+        id: nanoid(),
+        type: 'image',
+        content: publicUrl,
+        position: { x: 100, y: 100 },
+        size: { width: 200, height: 200 },
+        style: { ...DEFAULT_ELEMENT_STYLES.image },
+        zIndex: elements.length,
+      };
+
+      setElements(prev => [...prev, newElement]);
+      setSelectedElement(newElement);
+      setShowImageUploader(false);
     } catch (error) {
-      if (error instanceof TemplateValidationError) {
-        toast({
-          title: 'Error',
-          description: `Failed to add image: ${error.message}`,
-          variant: 'destructive',
-        });
-      } else {
-        console.error('Error adding image:', error);
-        toast({
-          title: 'Error',
-          description: 'An unexpected error occurred while adding the image',
-          variant: 'destructive',
-        });
-      }
+      console.error('Error uploading image:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to upload image. Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -239,11 +199,9 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
           ...prevElements[elementIndex],
           ...updates,
           content: updates.content 
-            ? sanitizeContent(updates.content, prevElements[elementIndex].type)
+            ? updates.content
             : prevElements[elementIndex].content,
         };
-
-        validateElement(updatedElement);
 
         const newElements = [...prevElements];
         newElements[elementIndex] = updatedElement;
@@ -302,14 +260,16 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     try {
       const template: Template = {
         id: templateId || nanoid(),
-        name,
+        name: name || 'Untitled Template',
         description,
         user_id: user.id,
         is_public: false,
-        design_data: {
+        design_data: JSON.stringify({
           dimensions,
           elements,
-        },
+        }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase
@@ -654,7 +614,7 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
                       ...element.style,
                       textAlign: element.style?.textAlign as CSSProperties['textAlign']
                     }}
-                    onResize={(size) => handleResize(element.id, size)}
+                    onResize={(size) => updateElement(element.id, { size })}
                     className={selectedElement?.id === element.id ? 'ring-2 ring-primary' : ''}
                   >
                     {renderElement(element)}
