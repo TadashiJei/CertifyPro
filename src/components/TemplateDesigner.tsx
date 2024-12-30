@@ -3,9 +3,9 @@ import { DndContext, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
-import { nanoid } from 'nanoid';
+import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,14 +23,19 @@ import {
   ElementType,
   ElementPosition,
   ElementSize,
-  ElementStyle,
   Template,
   TemplateError,
   TemplateValidationError,
   DEFAULT_ELEMENT_SIZES,
-  DEFAULT_ELEMENT_STYLES,
   DEFAULT_TEMPLATE_DIMENSIONS,
 } from '@/types/template';
+
+type ElementStyle = {
+  fontSize?: number;
+  fontFamily?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  color?: string;
+};
 
 interface TemplateDesignerProps {
   user: User;
@@ -40,6 +45,7 @@ interface TemplateDesignerProps {
 const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   const { user } = useAuth();
   const { templateId } = useParams();
+  const location = useLocation();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
@@ -52,12 +58,78 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
   });
   const [showImageUploader, setShowImageUploader] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isCreating] = useState(location.pathname === '/templates/create');
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  const DEFAULT_STYLES: Record<ElementType, Partial<ElementStyle>> = {
+    text: {
+      fontSize: 16,
+      fontFamily: 'Arial',
+      textAlign: 'left',
+      color: '#000000',
+    },
+    image: {},
+    variable: {
+      fontSize: 16,
+      fontFamily: 'Arial',
+      textAlign: 'left',
+      color: '#000000',
+    },
+    qr: {},
+  };
+
+  // Load template data when editing
+  useEffect(() => {
+    const loadTemplate = async () => {
+      // Skip loading if we're creating a new template
+      if (isCreating || !templateId) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('templates')
+          .select('*')
+          .eq('id', templateId)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setName(data.name);
+          setDescription(data.description || '');
+          try {
+            const designData = typeof data.design_data === 'string' 
+              ? JSON.parse(data.design_data)
+              : data.design_data;
+            
+            setElements(designData.elements || []);
+            setDimensions(designData.dimensions || { width: 210, height: 297 });
+          } catch (parseError) {
+            console.error('Error parsing design data:', parseError);
+            toast({
+              title: 'Warning',
+              description: 'Some template data could not be loaded properly',
+              variant: 'destructive',
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error loading template:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load template',
+          variant: 'destructive',
+        });
+        navigate('/dashboard');
+      }
+    };
+
+    loadTemplate();
+  }, [templateId, isCreating, toast, navigate]);
+
   const handleBack = () => {
     if (saving) return;
-    navigate('/dashboard', { replace: true });
+    navigate('/dashboard');
   };
 
   useEffect(() => {
@@ -87,52 +159,18 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     return () => document.removeEventListener('wheel', handleWheel);
   }, []);
 
-  useEffect(() => {
-    const loadTemplate = async () => {
-      if (!templateId) return;
-
-      try {
-        const { data, error } = await supabase
-          .from('templates')
-          .select('*')
-          .eq('id', templateId)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          setName(data.name || '');
-          setDescription(data.description || '');
-          const designData = data.design_data as { orientation?: 'portrait' | 'landscape', elements?: TemplateElement[] };
-          setOrientation(designData?.orientation || 'landscape');
-          setElements(designData?.elements || []);
-        }
-      } catch (error) {
-        console.error('Error loading template:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load template',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    loadTemplate();
-  }, [templateId, toast]);
-
   const addElement = (type: ElementType) => {
     try {
       const newElement: TemplateElement = {
-        id: nanoid(),
+        id: uuidv4(),
         type,
         content: type === 'text' ? 'New Text' : '',
         position: { x: 100, y: 100 },
-        size: { ...DEFAULT_ELEMENT_SIZES[type] },
-        style: { ...DEFAULT_ELEMENT_STYLES[type] },
-        zIndex: elements.length,
+        size: { width: 200, height: type === 'text' ? 50 : 200 },
+        style: { ...DEFAULT_STYLES[type] },
       };
 
-      setElements(prev => [...prev, newElement]);
+      setElements((prev) => [...prev, newElement]);
       setSelectedElement(newElement);
 
       if (type === 'image') {
@@ -142,16 +180,38 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
       console.error('Error adding element:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add element. Please try again.',
+        description: 'Failed to add element',
         variant: 'destructive',
       });
+    }
+  };
+
+  const updateElementStyle = (elementId: string, style: Partial<ElementStyle>) => {
+    setElements((prev) =>
+      prev.map((el) =>
+        el.id === elementId
+          ? {
+              ...el,
+              style: { ...el.style, ...style },
+            }
+          : el
+      )
+    );
+  };
+
+  const handleFontSizeChange = (value: string) => {
+    if (!selectedElement) return;
+    
+    const fontSize = parseInt(value, 10);
+    if (!isNaN(fontSize)) {
+      updateElementStyle(selectedElement.id, { fontSize });
     }
   };
 
   const handleImageUpload = async (file: File) => {
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${nanoid()}.${fileExt}`;
+      const fileName = `${uuidv4()}.${fileExt}`;
       const filePath = `${user?.id}/${fileName}`;
 
       const { error: uploadError, data } = await supabase.storage
@@ -165,12 +225,12 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
         .getPublicUrl(filePath);
 
       const newElement: TemplateElement = {
-        id: nanoid(),
+        id: uuidv4(),
         type: 'image',
         content: publicUrl,
         position: { x: 100, y: 100 },
         size: { width: 200, height: 200 },
-        style: { ...DEFAULT_ELEMENT_STYLES.image },
+        style: { ...DEFAULT_STYLES.image },
         zIndex: elements.length,
       };
 
@@ -258,16 +318,18 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
     
     setSaving(true);
     try {
+      const designData = {
+        dimensions,
+        elements,
+      };
+
       const template: Template = {
-        id: templateId || nanoid(),
+        id: templateId || uuidv4(),
         name: name || 'Untitled Template',
         description,
         user_id: user.id,
         is_public: false,
-        design_data: JSON.stringify({
-          dimensions,
-          elements,
-        }),
+        design_data: JSON.stringify(designData),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -276,39 +338,21 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
         .from('templates')
         .upsert(template);
 
-      if (error) {
-        throw new TemplateValidationError('Failed to save template', [{
-          code: 'SAVE_ERROR',
-          message: error.message,
-        }]);
-      }
+      if (error) throw error;
 
       toast({
-        title: 'Template saved successfully',
-        description: 'Your template has been saved to your account.',
+        title: 'Success',
+        description: 'Template saved successfully',
       });
 
-      if (!templateId) {
-        navigate(`/templates/${template.id}`);
-      }
+      navigate('/dashboard');
     } catch (error) {
       console.error('Error saving template:', error);
-      
-      if (error instanceof TemplateValidationError) {
-        error.errors.forEach(err => {
-          toast({
-            title: 'Validation Error',
-            description: err.message,
-            variant: 'destructive',
-          });
-        });
-      } else {
-        toast({
-          title: 'Error saving template',
-          description: 'There was an error saving your template. Please try again.',
-          variant: 'destructive',
-        });
-      }
+      toast({
+        title: 'Error',
+        description: 'Failed to save template',
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }
@@ -645,11 +689,10 @@ const TemplateDesigner: React.FC<TemplateDesignerProps> = () => {
                       <Label>Font Size</Label>
                       <Input
                         type="number"
-                        value={selectedElement.style?.fontSize?.replace('px', '') || '16'}
-                        onChange={(e) => updateElement(selectedElement.id, {
-                          style: { ...selectedElement.style, fontSize: `${e.target.value}px` }
-                        })}
-                        className="mt-1"
+                        value={selectedElement.style?.fontSize || 16}
+                        onChange={(e) => handleFontSizeChange(e.target.value)}
+                        min={8}
+                        max={72}
                       />
                     </div>
                   </>

@@ -34,7 +34,15 @@ const App = () => {
                 }
               />
               <Route
-                path="/templates/:templateId?"
+                path="/templates/create"
+                element={
+                  <AuthGuard>
+                    <TemplateDesigner user={user} />
+                  </AuthGuard>
+                }
+              />
+              <Route
+                path="/templates/:templateId/edit"
                 element={
                   <AuthGuard>
                     <TemplateDesigner user={user} />

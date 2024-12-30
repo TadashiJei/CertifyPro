@@ -60,7 +60,7 @@ export const TemplateList = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Your Templates</h2>
-        <Button onClick={() => navigate("/create")} className="flex items-center gap-2">
+        <Button onClick={() => navigate("/templates/create")} className="flex items-center gap-2">
           <PlusCircle className="w-5 h-5" />
           Create Template
         </Button>
@@ -71,7 +71,7 @@ export const TemplateList = () => {
           <h3 className="text-lg font-medium text-gray-900">No templates yet</h3>
           <p className="mt-2 text-gray-500">Get started by creating your first template.</p>
           <Button
-            onClick={() => navigate("/create")}
+            onClick={() => navigate("/templates/create")}
             className="mt-4"
             variant="outline"
           >

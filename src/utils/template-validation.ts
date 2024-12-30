@@ -46,6 +46,13 @@ export function validateElement(element: TemplateElement): TemplateError[] {
   return errors;
 }
 
+// UUID validation regex pattern
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUUID(uuid: string): boolean {
+  return UUID_REGEX.test(uuid);
+}
+
 export function validateTemplate(template: Template): void {
   const errors: TemplateError[] = [];
 
@@ -53,6 +60,12 @@ export function validateTemplate(template: Template): void {
     errors.push({
       code: 'INVALID_ID',
       message: 'Template ID is required',
+      field: 'id',
+    });
+  } else if (!isValidUUID(template.id)) {
+    errors.push({
+      code: 'INVALID_UUID_FORMAT',
+      message: 'Template ID must be a valid UUID',
       field: 'id',
     });
   }
